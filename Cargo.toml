@@ -1,0 +1,10 @@
+[package]
+name = "nsh-bluetooth"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+description = "BLE central and peripheral roles for NSH apps."
+repository = "https://github.com/SuperNSH/bluetooth"
+publish = false
+
+[dependencies]
