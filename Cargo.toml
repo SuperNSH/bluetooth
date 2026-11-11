@@ -1,10 +1,9 @@
-[package]
-name = "nsh-bluetooth"
+[workspace]
+members = ["crates/nsh-bluetooth"]
+resolver = "3"
+
+[workspace.package]
 version = "0.0.1"
 edition = "2024"
 license = "MIT"
-description = "BLE central and peripheral roles for NSH apps."
 repository = "https://github.com/SuperNSH/bluetooth"
-publish = false
-
-[dependencies]

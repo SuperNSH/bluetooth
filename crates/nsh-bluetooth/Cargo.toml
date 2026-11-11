@@ -1,0 +1,77 @@
+[package]
+name = "nsh-bluetooth"
+description = "BLE central and peripheral roles for NSH apps."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "nsh_bluetooth"
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = "2.0.21"
+# macros: `Central` races connects with tokio::select!. rt: the linux bridge's native module
+# calls tokio::spawn in production code.
+tokio = { version = "1.54.1", default-features = false, features = [
+    "sync",
+    "time",
+    "rt",
+    "macros",
+] }
+
+# Apple: CoreBluetooth through objc2. Feature names match the classes the bridge binds.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+objc2 = "0.6.5"
+objc2-core-bluetooth = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "CBATTRequest",
+    "CBAdvertisementData",
+    "CBAttribute",
+    "CBCentralManager",
+    "CBCharacteristic",
+    "CBDescriptor",
+    "CBError",
+    "CBManager",
+    "CBPeer", # CBPeripheral and every manager method that touches one is cfg-gated on it.
+    "CBPeripheral",
+    "CBPeripheralManager",
+    "CBService",
+    "CBUUID",
+] }
+
+# Android: the host's BLE service over JNI. ndk-context carries the VM pointer.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22.4"
+ndk-context = "0.1.1"
+
+# Windows: WinRT BluetoothLE APIs. Storage_Streams carries IBuffer for GATT values;
+# Win32_System_Com carries the MTA apartment init.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_Advertisement",
+    "Devices_Bluetooth_GenericAttributeProfile",
+    "Devices_Radios",
+    "Foundation",
+    "Foundation_Collections",
+    "Storage_Streams",
+    "Win32_System_Com",
+] }
+
+# Linux: BlueZ over D-Bus through bluer. bluer's discovery, event and notify APIs return
+# futures::Stream values, so driving them needs futures as a direct dependency.
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17.4", default-features = false, features = ["bluetoothd"] }
+futures = "0.3"
+
+# Web: Web Bluetooth through hand-written wasm-bindgen externs.
+[target.'cfg(target_family = "wasm")'.dependencies]
+js-sys = "0.3.107"
+wasm-bindgen = "0.2.130"
+
+[dev-dependencies]
+# sync: tests/adapter.rs drives broadcast receivers directly.
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "macros", "time", "sync"] }

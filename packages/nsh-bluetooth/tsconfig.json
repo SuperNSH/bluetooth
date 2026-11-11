@@ -1,0 +1,17 @@
+{
+  // The org's packages extend .nsh/tsconfig.json when built under the NSH toolchain; this
+  // package is toolchain-free (docs/decisions.md #7), so it carries its own strict config.
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "verbatimModuleSyntax": true,
+    // DOM is pulled in only for setTimeout/clearTimeout; no @types/node since the package pins
+    // just typescript and vitest.
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

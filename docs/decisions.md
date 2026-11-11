@@ -1,11 +1,16 @@
 # Decisions
 
-## Open
-
-1. **NSH version.** The brief pins NSH 0.4.0. Native features in this area may exist only on the unreleased `main` branch. Decide before implementation.
-2. **Library choice.** Pick from the options in [brief.md](brief.md) and record the reason here before writing code.
-3. **Platforms in scope for the first release.** Decide per platform: desktop, iOS, Android, web.
-
 ## Decided
 
-None yet.
+2026-11-09, during the STEP-0 bootstrap, before the implementation workflow ran.
+
+1. **References.** All five cloned shallow into `.refs/` (gitignored): `flutter_blue_plus` `1e3bd09` (monorepo; the package lives under `packages/flutter_blue_plus`), `react-native-ble-plx` `92a496d` (public types in `src/index.d.ts`, error codes in `src/BleError.js`), `btleplug` `1af8299`, `nsh` `047fe53`, `biometrics` `fe622d8`. No URL failed, so no canonical-repo substitution was needed.
+2. **Layout.** Workspace like SuperNSH/biometrics: `crates/nsh-bluetooth` (Rust), `packages/nsh-bluetooth` (TypeScript), `docs/`. The root `Cargo.toml` becomes a workspace manifest (resolver 3, edition 2024, shared package fields).
+3. **NSH version** (was open 1). The crate carries no `nsh-core` dependency yet: NSH 0.4.0's native features do not cover Bluetooth, so there is no host service to register with. The crate exposes plain Rust APIs behind its own `CentralBackend`/`ServerBackend` traits; the `native_module!` glue lands when NSH ships a Bluetooth host feature.
+4. **Library choice** (was open 2). Native per-platform bridges instead of btleplug: Apple = `objc2-core-bluetooth` 0.3.2 (central and peripheral), Android = the host's BLE service over JNI (`jni` 0.22.4 + `ndk-context` 0.1.1; central), Windows = WinRT via `windows` 0.62.2 (central and peripheral), Linux = `bluer` 0.17.4 (central and peripheral), web = Web Bluetooth over `wasm-bindgen` 0.2.130 + `js-sys` 0.3.107 (central only; Web Bluetooth has no peripheral role). btleplug has no peripheral role and would make the desktop bridges thin wrappers over one API; native stacks keep the explicit state and coded-error behaviour uniform.
+5. **Platforms in scope** (was open 3). All five surfaces. Each bridge implements what its platform supports; unsupported calls return `ERR_BLUETOOTH_UNSUPPORTED`. Platforms with no bridge at all get the shared `UnsupportedBackend`.
+6. **Error codes.** `ERR_BLUETOOTH_*` prefix, following SuperNSH/biometrics' `ERR_BIOMETRICS_*` convention. The set covers the union of react-native-ble-plx's `BleErrorCode`, flutter_blue_plus's failure modes and the edge cases in docs/brief.md; the enumeration lives in docs/goals.md.
+7. **TypeScript tooling.** Plain `tsc --noEmit` and vitest in `packages/nsh-bluetooth`, not the NSH toolchain (`nsh check`/`nsh build`/`nsh test` as biometrics CI runs). This package imports no `nsh` module yet, so CI needs no NSH install. Revisit if the package grows TSX hooks.
+8. **Streams.** Rust: tokio broadcast channels; a lagged receiver resynchronises instead of failing the stream. TypeScript: `AsyncIterable`. One scan and one advertisement at a time per `Central`/`Server`; a second concurrent one fails with `ERR_BLUETOOTH_IN_PROGRESS`.
+9. **Bridge gating.** Each `src/platform/<os>.rs` compiles everywhere: pure mapping helpers (status code to error kind) and their tests are unconditional; the FFI/WinRT/JNI part sits in a `#[cfg]`-gated inner module, so every bridge typechecks on every host while native code still compiles only on its platform (CI cross-checks the rest).
+10. **Cross-target verification, verified 2026-11-09 on the scaffold.** `cargo clippy --target` passes on this machine for `wasm32-unknown-unknown`, `x86_64-pc-windows-gnu` and `aarch64-linux-android`. The Linux target cannot be checked here: bluer's `dbus`/`libdbus-sys` needs dbus C headers, which macOS does not have. The Linux bridge's native part is therefore verified by CI's `ubuntu-latest` job (which installs `libdbus-1-dev pkg-config`), and locally only its pure mapping helpers are checked.
