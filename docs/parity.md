@@ -162,4 +162,4 @@ plx's `attErrorCode`, `iosErrorCode` and `androidErrorCode` have no codes of the
 ## Notes
 
 - **btleplug** (`.refs/btleplug`, `1af8299`): its `Central` and `Peripheral` traits shaped our `CentralBackend`/`ServerBackend` split — a backend trait the library drives, the fake implements and each platform bridge fills in. btleplug itself is not used (decisions.md #4): it has no peripheral role, and its adapter-state handling would leave the explicit states and coded errors uneven across platforms.
-- **NSH**: NSH 0.4.0 has no Bluetooth host feature (decisions.md #3), so nothing registers with an NSH host yet. The crate is plain Rust behind its own traits, and the TypeScript package mirrors it directly; the `native_module!` glue lands when NSH ships a Bluetooth host feature.
+- **NSH**: NSH (0.4.0 and 0.5.0) has no Bluetooth host feature (decisions.md #3), so nothing registers with an NSH host yet. The crate is plain Rust behind its own traits, and the TypeScript package mirrors it directly; the `native_module!` glue lands when NSH ships a Bluetooth host feature.

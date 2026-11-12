@@ -125,4 +125,4 @@ Each case maps to one canonical test name, identical across languages: a Rust in
 
 - No device tests on developer machines. GitHub CI compiles and tests everything; no emulator or simulator is started locally (AGENTS.md).
 - The web has no background scan and no peripheral role. Web Bluetooth needs a user gesture to pick a device and offers no GATT server, so the web bridge is central-only and foreground-only.
-- No NSH host glue yet. NSH 0.4.0 has no Bluetooth host feature to register with (decisions.md #3); the `native_module!` bridge lands when NSH ships one.
+- No NSH host glue yet. NSH (0.4.0 and 0.5.0) has no Bluetooth host feature to register with (decisions.md #3); the `native_module!` bridge lands when NSH ships one.
