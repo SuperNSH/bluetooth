@@ -121,7 +121,7 @@ pub fn server_backend() -> Option<Arc<dyn ServerBackend>> {
 #[cfg(target_os = "linux")]
 mod native {
     use std::{
-        collections::{BTreeSet, HashMap, HashSet},
+        collections::{BTreeSet, HashMap, HashSet, hash_map::Entry},
         future::{Future, ready},
         sync::{Arc, Mutex, PoisonError},
         time::Duration,
@@ -153,6 +153,10 @@ mod native {
         time::{sleep, timeout},
     };
 
+    use super::{
+        bluez_error_to_kind, bluez_flags_to_properties, bluez_powered_to_adapter_state, clamp_dbm,
+        manufacturer_data_to_bytes,
+    };
     use crate::backend::{
         AdapterState, AdvertiseOptions, AdvertisementData, BackendFuture, CentralBackend,
         Characteristic, CharacteristicProperties, ConnectionEvent, Descriptor, DeviceId,
@@ -230,7 +234,7 @@ mod native {
             }
         })
         .await
-        .map(Adapter::clone)
+        .cloned()
     }
 
     /// Spawns `task` unless a live one already pumps the same channel.
@@ -264,12 +268,11 @@ mod native {
             let primary = bluez(remote_service.primary().await, fallback)?;
             let mut included_services = Vec::new();
             for id in bluez(remote_service.includes().await, fallback)? {
-                if let Ok(included) = device.service(id) {
-                    if let Ok(uuid) = included.uuid().await {
-                        if let Ok(ours) = to_our_uuid(&uuid) {
-                            included_services.push(ours);
-                        }
-                    }
+                if let Ok(included) = device.service(id).await
+                    && let Ok(uuid) = included.uuid().await
+                    && let Ok(ours) = to_our_uuid(&uuid)
+                {
+                    included_services.push(ours);
                 }
             }
             let mut characteristics = Vec::new();
@@ -620,10 +623,11 @@ mod native {
             &self,
             service_uuids: &[Uuid],
         ) -> BackendFuture<'_, Result<Vec<DeviceInfo>, BluetoothError>> {
+            let service_uuids = service_uuids.to_vec();
             Box::pin(raced(async move {
                 let adapter = self.adapter().await?;
                 let mut wanted = HashSet::new();
-                for uuid in service_uuids {
+                for uuid in &service_uuids {
                     wanted.insert(to_bluer_uuid(uuid)?);
                 }
                 let mut devices = Vec::new();
@@ -649,15 +653,17 @@ mod native {
         }
 
         fn connect(&self, id: &DeviceId) -> BackendFuture<'_, Result<(), BluetoothError>> {
+            let id = id.clone();
             Box::pin(raced(async move {
-                let device = self.device_for(id).await?;
+                let device = self.device_for(&id).await?;
                 bluez(device.connect().await, ErrorKind::ConnectFailed).map(|_| ())
             }))
         }
 
         fn disconnect(&self, id: &DeviceId) -> BackendFuture<'_, Result<(), BluetoothError>> {
+            let id = id.clone();
             Box::pin(raced(async move {
-                let device = self.device_for(id).await?;
+                let device = self.device_for(&id).await?;
                 match bluez(device.is_connected().await, ErrorKind::Backend) {
                     Ok(false) => Ok(()),
                     Ok(true) => bluez(device.disconnect().await, ErrorKind::Backend).map(|_| ()),
@@ -668,15 +674,17 @@ mod native {
         }
 
         fn is_connected(&self, id: &DeviceId) -> BackendFuture<'_, Result<bool, BluetoothError>> {
+            let id = id.clone();
             Box::pin(raced(async move {
-                let device = self.device_for(id).await?;
+                let device = self.device_for(&id).await?;
                 bluez(device.is_connected().await, ErrorKind::Backend)
             }))
         }
 
         fn read_rssi(&self, id: &DeviceId) -> BackendFuture<'_, Result<i8, BluetoothError>> {
+            let id = id.clone();
             Box::pin(raced(async move {
-                let device = self.device_for(id).await?;
+                let device = self.device_for(&id).await?;
                 match bluez(device.rssi().await, ErrorKind::Backend)? {
                     Some(rssi) => Ok(clamp_dbm(rssi)),
                     // No RSSI means BlueZ knows the device but no longer sees it.
@@ -690,10 +698,11 @@ mod native {
             id: &DeviceId,
             _mtu: u16,
         ) -> BackendFuture<'_, Result<u16, BluetoothError>> {
+            let id = id.clone();
             Box::pin(raced(async move {
                 // BlueZ exchanges the ATT MTU during connect and exposes no request call; the
                 // asked-for value is advisory and the effective one is read from a characteristic.
-                let device = self.device_for(id).await?;
+                let device = self.device_for(&id).await?;
                 let services = device
                     .services()
                     .await
@@ -716,8 +725,9 @@ mod native {
             &self,
             id: &DeviceId,
         ) -> BackendFuture<'_, Result<Vec<Service>, BluetoothError>> {
+            let id = id.clone();
             Box::pin(raced(async move {
-                let device = self.device_for(id).await?;
+                let device = self.device_for(&id).await?;
                 let discovered = walk_services(&device, ErrorKind::ServicesDiscoveryFailed).await?;
                 Self::lock_map(&self.gatt).insert(
                     id.as_str().to_owned(),
@@ -735,8 +745,9 @@ mod native {
             id: &DeviceId,
             characteristic: &Characteristic,
         ) -> BackendFuture<'_, Result<Vec<u8>, BluetoothError>> {
+            let (id, characteristic) = (id.clone(), characteristic.clone());
             Box::pin(raced(async move {
-                let remote = self.remote_characteristic(id, characteristic).await?;
+                let remote = self.remote_characteristic(&id, &characteristic).await?;
                 bluez(remote.read().await, ErrorKind::CharacteristicReadFailed)
             }))
         }
@@ -748,8 +759,9 @@ mod native {
             data: &[u8],
             write_type: WriteType,
         ) -> BackendFuture<'_, Result<(), BluetoothError>> {
+            let (id, characteristic, data) = (id.clone(), characteristic.clone(), data.to_vec());
             Box::pin(raced(async move {
-                let remote = self.remote_characteristic(id, characteristic).await?;
+                let remote = self.remote_characteristic(&id, &characteristic).await?;
                 let op_type = match write_type {
                     WriteType::WithResponse => WriteOp::Request,
                     WriteType::WithoutResponse => WriteOp::Command,
@@ -759,7 +771,7 @@ mod native {
                     ..CharacteristicWriteRequest::default()
                 };
                 bluez(
-                    remote.write_ext(data, &request).await,
+                    remote.write_ext(&data, &request).await,
                     ErrorKind::CharacteristicWriteFailed,
                 )
                 .map(|_| ())
@@ -772,28 +784,30 @@ mod native {
             characteristic: &Characteristic,
         ) -> BackendFuture<'_, Result<broadcast::Receiver<ValueNotification>, BluetoothError>>
         {
+            let (id, characteristic) = (id.clone(), characteristic.clone());
             Box::pin(raced(async move {
                 let key = (id.as_str().to_owned(), characteristic.uuid.clone());
-                if let Some(subscription) = Self::lock_map(&self.subscriptions).get(&key) {
-                    if !subscription.task.is_finished() {
-                        return Ok(subscription.values.subscribe());
-                    }
+                if let Some(subscription) = Self::lock_map(&self.subscriptions).get(&key)
+                    && !subscription.task.is_finished()
+                {
+                    return Ok(subscription.values.subscribe());
                 }
-                let remote = self.remote_characteristic(id, characteristic).await?;
+                let remote = self.remote_characteristic(&id, &characteristic).await?;
                 let changes = bluez(
                     remote.notify().await,
                     ErrorKind::CharacteristicNotifyChangeFailed,
                 )?;
                 let (values, receiver) = broadcast::channel(CHANNEL_CAPACITY);
                 let notified = characteristic.clone();
+                let sender = values.clone();
                 let task = tokio::spawn(async move {
                     // bluer does not promise Unpin streams; pinning keeps StreamExt usable.
                     let mut changes = Box::pin(changes);
                     while let Some(value) = changes.next().await {
-                        if values.receiver_count() == 0 {
+                        if sender.receiver_count() == 0 {
                             break;
                         }
-                        let _ = values.send(ValueNotification {
+                        let _ = sender.send(ValueNotification {
                             characteristic: notified.clone(),
                             value,
                         });
@@ -822,8 +836,9 @@ mod native {
             id: &DeviceId,
             descriptor: &Descriptor,
         ) -> BackendFuture<'_, Result<Vec<u8>, BluetoothError>> {
+            let (id, descriptor) = (id.clone(), descriptor.clone());
             Box::pin(raced(async move {
-                let remote = self.remote_descriptor(id, descriptor).await?;
+                let remote = self.remote_descriptor(&id, &descriptor).await?;
                 bluez(remote.read().await, ErrorKind::DescriptorReadFailed)
             }))
         }
@@ -834,9 +849,10 @@ mod native {
             descriptor: &Descriptor,
             data: &[u8],
         ) -> BackendFuture<'_, Result<(), BluetoothError>> {
+            let (id, descriptor, data) = (id.clone(), descriptor.clone(), data.to_vec());
             Box::pin(raced(async move {
-                let remote = self.remote_descriptor(id, descriptor).await?;
-                bluez(remote.write(data).await, ErrorKind::DescriptorWriteFailed).map(|_| ())
+                let remote = self.remote_descriptor(&id, &descriptor).await?;
+                bluez(remote.write(&data).await, ErrorKind::DescriptorWriteFailed).map(|_| ())
             }))
         }
 
@@ -866,12 +882,11 @@ mod native {
                                 event = adapter_events.next() => {
                                     match event {
                                         Some(AdapterEvent::DeviceAdded(address)) => {
-                                            if !watchers.contains_key(&address) {
-                                                if let Some(handle) =
+                                            if let Entry::Vacant(slot) = watchers.entry(address)
+                                                && let Some(handle) =
                                                     watch_device(&adapter, address, &device_tx)
-                                                {
-                                                    watchers.insert(address, handle);
-                                                }
+                                            {
+                                                slot.insert(handle);
                                             }
                                         }
                                         Some(AdapterEvent::DeviceRemoved(address)) => {
@@ -925,6 +940,10 @@ mod native {
                 CharacteristicRead {
                     read: true,
                     fun: Box::new(move |request| {
+                        // bluer calls this per request (`Fn`), so each future gets its own copies.
+                        let (requests, values) = (requests.clone(), Arc::clone(&values));
+                        let (service_uuid, characteristic_uuid) =
+                            (service_uuid.clone(), characteristic_uuid.clone());
                         Box::pin(async move {
                             let _ = requests.send(GattRequest {
                                 service_uuid: service_uuid.clone(),
@@ -966,6 +985,9 @@ mod native {
                     .contains(CharacteristicProperties::AUTHENTICATED_SIGNED_WRITES),
                 method: CharacteristicWriteMethod::Fun(Box::new(
                     move |data, request: bluer::gatt::local::CharacteristicWriteRequest| {
+                        let (requests, values) = (requests.clone(), Arc::clone(&values));
+                        let (service_uuid, characteristic_uuid) =
+                            (service_uuid.clone(), characteristic_uuid.clone());
                         Box::pin(async move {
                             let _ = requests.send(GattRequest {
                                 service_uuid: service_uuid.clone(),
@@ -1010,6 +1032,7 @@ mod native {
                     indicate: properties.contains(CharacteristicProperties::INDICATE)
                         && !properties.contains(CharacteristicProperties::NOTIFY),
                     method: CharacteristicNotifyMethod::Fun(Box::new(move |session| {
+                        let entry = Arc::clone(&entry);
                         Box::pin(async move {
                             *entry.lock().await = Some(session);
                             // bluer replies to StartNotify only after this future finishes, so the
@@ -1242,17 +1265,20 @@ mod native {
             characteristic: Uuid,
             data: &[u8],
         ) -> BackendFuture<'_, Result<(), BluetoothError>> {
+            let data = data.to_vec();
             Box::pin(raced(async move {
-                let served = Self::lock_map(&self.served);
-                match served.get(&service) {
-                    None => return Err(BluetoothError::new(ErrorKind::ServiceNotFound)),
-                    Some(served) => {
-                        if !served.characteristics.contains(&characteristic) {
-                            return Err(BluetoothError::new(ErrorKind::CharacteristicNotFound));
+                // Scoped so the std guard is gone before the await below; the future must be Send.
+                {
+                    let served = Self::lock_map(&self.served);
+                    match served.get(&service) {
+                        None => return Err(BluetoothError::new(ErrorKind::ServiceNotFound)),
+                        Some(served) => {
+                            if !served.characteristics.contains(&characteristic) {
+                                return Err(BluetoothError::new(ErrorKind::CharacteristicNotFound));
+                            }
                         }
                     }
                 }
-                drop(served);
                 let entry = Self::lock_map(&self.notifiers)
                     .get(&(service.clone(), characteristic.clone()))
                     .map(Arc::clone);
@@ -1268,7 +1294,7 @@ mod native {
                     ));
                 };
                 bluez(
-                    notifier.notify(data.to_vec()).await,
+                    notifier.notify(data).await,
                     ErrorKind::CharacteristicNotifyChangeFailed,
                 )
                 .map(|_| ())
