@@ -16,6 +16,16 @@ CI (`.github/workflows/ci.yml`) runs on every push:
 - the TypeScript typecheck and the TypeScript tests in `packages/nsh-bluetooth`
 - a cross-check matrix for the iOS, Android and wasm targets, so every bridge typechecks on every host
 
+## Verification
+
+All 30 edge cases in [docs/goals.md](docs/goals.md) have a test of the same name in both languages (checked by name in `crates/nsh-bluetooth/tests/` and `packages/nsh-bluetooth/tests/`), and both halves carry the same 35 error codes. CI run [43992213910](https://github.com/SuperNSH/bluetooth/actions/runs/43992213910) on `4624e7c` passed all jobs: format, rust (ubuntu, macos, windows), cross-check (iOS, Android, wasm), typescript.
+
+## Blocked
+
+- NSH host glue: NSH 0.6.0 still drops `capabilities.bluetooth` as unknown (checked in `nsh-core` `access.rs`), so there is no host service to register with and the crate has no `nsh-core` dependency. The crate and package stay plain, with no NSH install in CI (decisions.md #3 and #7).
+- Real hardware: no runner has a radio, so the Apple, Android, Windows, Linux and web bridges are compiled and clippy-checked but never exercised against a real stack.
+- `ERR_BLUETOOTH_STATE_CHANGE_FAILED`, `ERR_BLUETOOTH_CHARACTERISTICS_NOT_DISCOVERED` and `ERR_BLUETOOTH_DESCRIPTORS_NOT_DISCOVERED` exist as codes but no call fires them today (docs/parity.md).
+
 No CI runner has a Bluetooth radio. Every test runs through the fake backend, in both languages. Nothing has been run on a real device.
 
 ## Layout
