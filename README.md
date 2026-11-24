@@ -4,6 +4,12 @@ BLE central and peripheral roles for NSH apps.
 
 Part of the Native Shell (NSH) capability set. Same layout as the other SuperNSH repos: a Rust crate, docs in `docs/`, CI on GitHub Actions, and a web status page on GitHub Pages at https://supernsh.github.io/bluetooth/.
 
+## Install
+
+```sh
+cargo add nsh-bluetooth
+```
+
 ## Status
 
 **Building out.** A Rust crate under `crates/nsh-bluetooth` and a TypeScript package under `packages/nsh-bluetooth` share the same `ERR_BLUETOOTH_*` error codes and the same behavior; the names match except one split [docs/parity.md](docs/parity.md) documents (Rust `read_characteristic` / `write_characteristic` / `subscribe_characteristic` vs TypeScript `device.read` / `device.write` / `device.subscribe`). The contract both halves implement is [docs/goals.md](docs/goals.md); the choices behind it are in [docs/decisions.md](docs/decisions.md).
