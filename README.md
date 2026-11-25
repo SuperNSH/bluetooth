@@ -28,7 +28,7 @@ All 30 edge cases in [docs/goals.md](docs/goals.md) have a test of the same name
 
 ## Blocked
 
-- NSH host glue: NSH 0.6.0 still drops `capabilities.bluetooth` as unknown (checked in `nsh-core` `access.rs`), so there is no host service to register with and the crate has no `nsh-core` dependency. The crate and package stay plain, with no NSH install in CI (decisions.md #3 and #7).
+- NSH host glue: NSH 0.7.1 still drops `capabilities.bluetooth` as unknown (checked in `nsh-core` `access.rs`), so there is no host service to register with and the crate has no `nsh-core` dependency. The crate and package stay plain, with no NSH install in CI (decisions.md #3 and #7).
 - Real hardware: no runner has a radio, so the Apple, Android, Windows, Linux and web bridges are compiled and clippy-checked but never exercised against a real stack.
 - `ERR_BLUETOOTH_STATE_CHANGE_FAILED`, `ERR_BLUETOOTH_CHARACTERISTICS_NOT_DISCOVERED` and `ERR_BLUETOOTH_DESCRIPTORS_NOT_DISCOVERED` exist as codes but no call fires them today (docs/parity.md).
 

@@ -495,7 +495,7 @@ mod native {
 
     use super::{android_state_to_adapter_state, android_status_to_error, wire};
 
-    // The Java-side contract this bridge speaks. The class does not exist in NSH 0.6.0
+    // The Java-side contract this bridge speaks. The class does not exist in NSH 0.7.1
     // (docs/decisions.md #3), so on-device today every call resolves Unsupported; the day the
     // host ships BLE, this is the shape it implements. All methods are static on
     // `dev.supernsh.nsh.BluetoothBridge`, answer statuses per `android_status_to_error`
